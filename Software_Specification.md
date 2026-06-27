@@ -167,6 +167,87 @@ classDiagram
 *   **`HeadlessTuner`:** An autonomous state machine. Instead of relying on user clicks, it holds a `QList` of configurations. It starts a configuration, waits a specified duration (e.g., 40 seconds), checks the NMEA parser for a 3D fix, logs the result to a CSV, and transitions to the next configuration.
 *   **`AntennaTestDialog`:** A specialized QDialog that borrows an `SdrStreamer` instance to stream data to `/dev/null` temporarily. This isolates the SDR to measure thermal noise averages in two states (plugged vs unplugged).
 
+```
+
+### Data Flow Sequence Diagram
+
+This sequence diagram illustrates the complex startup sequence and data flow pipeline when a user clicks the "Start" button in the Cockpit. It highlights how IPC is established using a POSIX named pipe before the SDR begins writing.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Main as MainWindow (UI)
+    participant QTh as SdrStreamer (QThread)
+    participant SDR as SoapySDR (Hardware)
+    participant Pipe as POSIX FIFO (.fifo)
+    participant GNSS as gnss-sdr (QProcess)
+
+    User->>Main: Click "Start Receiver"
+    Main->>Main: Generate gnss-sdr.conf
+    Main->>Pipe: mkfifo(path) (Create Pipe)
+    
+    Main->>QTh: startStreaming(path)
+    activate QTh
+    QTh->>SDR: Setup & Initialize LimeSDR
+    QTh->>Pipe: open(O_WRONLY | O_NONBLOCK)
+    Note right of QTh: Loops until gnss-sdr attaches reader
+    
+    Main->>GNSS: QProcess::start("gnss-sdr")
+    activate GNSS
+    GNSS->>Pipe: open(O_RDONLY) (Reader attached)
+    
+    QTh->>Pipe: Switch to blocking mode
+    
+    loop Real-Time Streaming
+        QTh->>SDR: readStream()
+        SDR-->>QTh: CF32 IQ Samples
+        QTh->>Pipe: write() samples
+        Pipe-->>GNSS: Read samples
+        GNSS->>GNSS: Correlate & Track (DSP)
+    end
+    
+    GNSS-->>Main: Write PVT to .nmea file
+    Main->>Main: Tail & Parse NMEA
+    Main-->>User: Update Skyplot & UI Dashboard
+```
+
+### Diagnostic State Diagram (Antenna LNA Test)
+
+The `AntennaTestDialog` employs a state machine to orchestrate the measurement of thermal noise, temporarily taking over the SDR hardware to prove the LNA is active.
+
+```mermaid
+stateDiagram-v2
+    [*] --> INIT: User opens dialog
+    
+    INIT --> MEASURING_PLUGGED: User clicks "Start Test"
+    
+    state MEASURING_PLUGGED {
+        direction LR
+        StreamOn1: SDR Streams to /dev/null
+        Measure1: Accumulate powerDb
+        StreamOn1 --> Measure1: 3 seconds
+    }
+    
+    MEASURING_PLUGGED --> WAITING_UNPLUG: Timeout
+    
+    WAITING_UNPLUG --> MEASURING_UNPLUGGED: User unplugs & clicks "Ready"
+    
+    state MEASURING_UNPLUGGED {
+        direction LR
+        StreamOn2: SDR Streams to /dev/null
+        Measure2: Accumulate powerDb
+        StreamOn2 --> Measure2: 3 seconds
+    }
+    
+    MEASURING_UNPLUGGED --> FINISHED: Timeout
+    
+    state FINISHED {
+        calc: Compare Plugged vs Unplugged
+    }
+    
+    FINISHED --> [*]: User closes dialog
+```
+
 ---
 
 ## 5. Functional Capabilities & Requirements
