@@ -911,6 +911,20 @@ void MainWindow::updateSatellitesDisplay()
 
     QMap<int, int> satSnr = m_nmeaParser.getSatelliteSnr();
 
+    // Merge active tracking channel PRNs into satSnr if not already present from NMEA
+    for (int i = 0; i < 8; ++i) {
+        if (m_channels[i].prn > 0) {
+            int prn = m_channels[i].prn;
+            if (!satSnr.contains(prn)) {
+                if (m_channels[i].status == "Tracking") {
+                    satSnr[prn] = 40; // Est SNR for tracking
+                } else if (m_channels[i].status == "Acquired") {
+                    satSnr[prn] = 35; // Est SNR for acquired
+                }
+            }
+        }
+    }
+
     // Filter out PRNs that are currently tracked on channels to color code them green
     QSet<int> trackedPrns;
     for (int i = 0; i < 8; ++i) {
