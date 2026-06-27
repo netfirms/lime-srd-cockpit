@@ -1,0 +1,17 @@
+# Qt / QMake compiler products
+*.o
+moc_*
+ui_*
+qrc_*
+.qmake.stash
+Makefile.qmake
+LimeSrdCockpit.app/
+
+# GPS logging and temporary files
+gnss-sdr.log
+gnss_sdr_limesdr_temp.conf
+limesdr_fifo.dat
+gnss_output/
+
+# OS X files
+.DS_Store
