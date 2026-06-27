@@ -965,6 +965,7 @@ void MainWindow::updateSatellitesDisplay()
         bar->setOrientation(Qt::Vertical);
         bar->setRange(0, 50); // Typical C/N0 is 30 to 50 dB-Hz for lock
         bar->setValue(snr);
+        bar->setTextVisible(false); // Hide the default Qt percentage text (e.g. "80%")
         bar->setFixedHeight(120);
         bar->setFixedWidth(20);
         
