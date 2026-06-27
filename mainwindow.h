@@ -13,7 +13,9 @@
 #include <QSlider>
 #include <QCheckBox>
 #include <QPushButton>
+#include <QDoubleSpinBox>
 #include "sdrstreamer.h"
+#include "sdrscanner.h"
 #include "nmeaparser.h"
 
 struct ChannelState {
@@ -41,6 +43,37 @@ private:
     QMap<int, SatelliteInfo> m_sats;
 };
 
+class SpectrumPlotWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SpectrumPlotWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    
+    void addPoint(double freq, double power) {
+        m_points[freq] = power;
+        
+        // Update max hold
+        if (!m_maxHoldData.contains(freq) || power > m_maxHoldData[freq]) {
+            m_maxHoldData[freq] = power;
+        }
+        
+        update();
+    }
+    
+    void clearPoints() {
+        m_points.clear();
+        m_maxHoldData.clear();
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QMap<double, double> m_points;
+    QMap<double, double> m_maxHoldData;
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -61,6 +94,15 @@ public slots:
     void onPeriodicUpdate();
     void onDiagnosticsClicked();
     void onAutotuneClicked();
+    void onAntennaTestClicked();
+    void onAutoTuneTimer();
+    
+    // Scanner slots
+    void onStartScanClicked();
+    void onStopScanClicked();
+    void onScanPointReceived(double frequency, double powerDb);
+    void onInterferenceDetected(double frequency, double powerDb);
+    void onScanFinished();
 
 private:
     void setupUi();
@@ -76,6 +118,7 @@ private:
 
     // Backend
     SdrStreamer *m_sdrStreamer;
+    SdrScanner *m_sdrScanner;
     QProcess *m_gnssProcess;
     NmeaParser m_nmeaParser;
 
@@ -101,12 +144,26 @@ private:
     QPushButton *m_btnStop;
     QPushButton *m_btnDiagnostics;
     QPushButton *m_btnAutotune;
+    QPushButton *m_btnAntennaTest;
     QComboBox *m_comboSampleRate;
     QSlider *m_sliderGain;
     QLabel *m_lblGainVal;
     QCheckBox *m_chkBiasTee;
     QCheckBox *m_chkAdaptiveGain;
     QCheckBox *m_chkRecordIq;
+    QCheckBox *m_chkAutoTuneTracking;
+    
+    QDoubleSpinBox *m_spinPllBw;
+    QDoubleSpinBox *m_spinDllBw;
+    
+    int m_lossOfLockCount;
+    QTimer *m_autoTuneTimer;
+    
+    // SNR-based Hill Climbing AGC
+    double m_previousAverageCn0;
+    int m_agcDirection;
+    QTimer *m_snrAgcTimer;
+    void onSnrAgcTimer();
 
     QLabel *m_lblStatus;
     QLabel *m_lblPower;
@@ -126,6 +183,15 @@ private:
     QWidget *m_satsContainer;
     SkyplotWidget *m_skyplot;
     QTextEdit *m_txtConsole;
+    
+    // Scanner UI Widgets
+    QDoubleSpinBox *m_spinScanStart;
+    QDoubleSpinBox *m_spinScanStop;
+    QDoubleSpinBox *m_spinScanStep;
+    QPushButton *m_btnStartScan;
+    QPushButton *m_btnStopScan;
+    QLabel *m_lblInterferenceWarning;
+    SpectrumPlotWidget *m_spectrumPlot;
 };
 
 #endif // MAINWINDOW_H

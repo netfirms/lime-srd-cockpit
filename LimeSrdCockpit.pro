@@ -13,9 +13,20 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     sdrstreamer.cpp \
-    nmeaparser.cpp
+    sdrscanner.cpp \
+    nmeaparser.cpp \
+    headlesstuner.cpp \
+    antennatestdialog.cpp
 
 HEADERS += \
     mainwindow.h \
     sdrstreamer.h \
-    nmeaparser.h
+    sdrscanner.h \
+    nmeaparser.h \
+    headlesstuner.h \
+    antennatestdialog.h
+
+run.target = run
+run.commands = ./LimeSrdCockpit.app/Contents/MacOS/LimeSrdCockpit
+run.depends = $(TARGET)
+QMAKE_EXTRA_TARGETS += run

@@ -16,3 +16,10 @@ gnss_output/
 
 # OS X files
 .DS_Store
+
+# Ignore output data
+pvt.dat*
+GSDR*
+*.nmea
+*.csv
+Makefile

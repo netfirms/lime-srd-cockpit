@@ -82,9 +82,11 @@ void SdrStreamer::run()
         sdr->setSampleRate(SOAPY_SDR_RX, 0, m_sampleRate);
         sdr->setBandwidth(SOAPY_SDR_RX, 0, m_sampleRate * 1.25); // Optimize filter roll-off for GPS L1 spectrum
         
-        // Offset tuning to eliminate DC spike in the GPS band
-        sdr->setFrequency(SOAPY_SDR_RX, 0, "RF", 1573.42e6);
-        sdr->setFrequency(SOAPY_SDR_RX, 0, "BB", 2.0e6);
+        // Offset tuning to push the hardware DC spike out of the GPS L1 spectrum
+        // We use SoapySDR standard Kwargs which guarantees correct CORDIC sign mapping
+        SoapySDR::Kwargs args;
+        args["OFFSET"] = "2000000"; // 2 MHz offset
+        sdr->setFrequency(SOAPY_SDR_RX, 0, 1575.42e6, args);
         
         sdr->setAntenna(SOAPY_SDR_RX, 0, "LNAH"); // RX0 port (RX1_H on case)
         // Optimize noise figure for weak GNSS signals by prioritizing LNA and TIA gains
@@ -150,8 +152,29 @@ void SdrStreamer::run()
     emit logMessage(QString("Streaming started. Writing to FIFO: %1").arg(m_fifoPath));
 
     // Open FIFO for writing
-    // We open in O_RDWR (read-write) to prevent blocking if there is no reader yet.
-    int fd = ::open(m_fifoPath.toUtf8().constData(), O_RDWR);
+    // We open in O_WRONLY | O_NONBLOCK so we can wait for the reader (gnss-sdr)
+    // without blocking indefinitely if we are stopped while waiting.
+    int fd = -1;
+    while (m_running && fd < 0) {
+        fd = ::open(m_fifoPath.toUtf8().constData(), O_WRONLY | O_NONBLOCK);
+        if (fd < 0) {
+            usleep(100000); // Wait 100ms
+        }
+    }
+
+    if (!m_running) {
+        if (fd >= 0) ::close(fd);
+        sdr->deactivateStream(rxStream);
+        sdr->closeStream(rxStream);
+        SoapySDR::Device::unmake(sdr);
+        emit finishedStreaming();
+        return;
+    }
+
+    // Now that reader is connected, switch back to blocking mode for writing
+    int flags_fd = fcntl(fd, F_GETFL);
+    fcntl(fd, F_SETFL, flags_fd & ~O_NONBLOCK);
+
     if (fd < 0) {
         emit logMessage(QString("ERROR: Failed to open FIFO %1: %2").arg(m_fifoPath, strerror(errno)));
         sdr->deactivateStream(rxStream);
@@ -232,12 +255,23 @@ void SdrStreamer::run()
             // Compute power periodically
             lastPowerPrintTime += ret;
             if (lastPowerPrintTime >= m_sampleRate) { // Approx once per second
+                // 1. Calculate DC offset (mean)
+                std::complex<float> sum(0, 0);
+                for (int i = 0; i < ret; ++i) {
+                    sum += buffer[i];
+                }
+                std::complex<float> mean = sum / (float)ret;
+                
+                // 2. Calculate true AC power (Variance)
                 double sumMagSq = 0;
                 for (int i = 0; i < ret; ++i) {
-                    float mag = std::abs(buffer[i]);
-                    sumMagSq += mag * mag;
+                    float i_ac = buffer[i].real() - mean.real();
+                    float q_ac = buffer[i].imag() - mean.imag();
+                    sumMagSq += (i_ac * i_ac) + (q_ac * q_ac);
                 }
                 double meanMagSq = sumMagSq / ret;
+                
+                // Convert to dBFS (relative to 1.0 full scale for complex sinusoid)
                 double powerDb = 10.0 * std::log10(meanMagSq + 1e-12);
                 emit powerMeasured(powerDb);
                 lastPowerPrintTime = 0;
