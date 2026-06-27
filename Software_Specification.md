@@ -16,15 +16,15 @@ The High-Level Architecture describes how the Cockpit fits into the physical wor
 graph TD
     User([End User])
     
-    subgraph Host ["macOS Host System"]
+    subgraph Host [macOS Host System]
         Cockpit["LimeSDR GNSS Cockpit <br> (Qt6 / C++)"]
         GNSS_SDR["gnss-sdr <br> (Standalone DSP Engine)"]
-        Files[("File System")]
+        Files[(File System)]
     end
     
-    subgraph Hardware ["Physical Hardware"]
+    subgraph Hardware [Physical Hardware]
         LimeSDR["LimeSDR-USB <br> (SDR Hardware)"]
-        Antenna(("Active GNSS Antenna"))
+        Antenna((Active GNSS Antenna))
     end
     
     User <-->|GUI / CLI| Cockpit
@@ -67,9 +67,9 @@ flowchart LR
     end
     
     subgraph IPC ["IPC / File IO"]
-        FIFO[("POSIX FIFO Pipe")]
-        LOG[("gnss-sdr.log")]
-        NMEA_FILE[("PVT Output .nmea")]
+        FIFO[(POSIX FIFO Pipe)]
+        LOG[(gnss-sdr.log)]
+        NMEA_FILE[(PVT Output .nmea)]
     end
 
     UI -->|Start/Stop/Config| SdrStreamer
