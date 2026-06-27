@@ -637,10 +637,9 @@ void MainWindow::onSdrFinished()
 
 void MainWindow::onGnssProcessReadyRead()
 {
-    QByteArray data = m_gnssProcess->readAllStandardOutput();
-    if (data.isEmpty()) {
-        data = m_gnssProcess->readAllStandardError();
-    }
+    QByteArray stdOut = m_gnssProcess->readAllStandardOutput();
+    QByteArray stdErr = m_gnssProcess->readAllStandardError();
+    QByteArray data = stdOut + stdErr;
     
     QString text = QString::fromUtf8(data);
     QStringList lines = text.split('\n');
