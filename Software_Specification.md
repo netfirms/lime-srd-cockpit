@@ -167,7 +167,7 @@ classDiagram
 *   **`HeadlessTuner`:** An autonomous state machine. Instead of relying on user clicks, it holds a `QList` of configurations. It starts a configuration, waits a specified duration (e.g., 40 seconds), checks the NMEA parser for a 3D fix, logs the result to a CSV, and transitions to the next configuration.
 *   **`AntennaTestDialog`:** A specialized QDialog that borrows an `SdrStreamer` instance to stream data to `/dev/null` temporarily. This isolates the SDR to measure thermal noise averages in two states (plugged vs unplugged).
 
-```
+
 
 ### Data Flow Sequence Diagram
 
