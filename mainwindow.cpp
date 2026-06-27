@@ -289,7 +289,7 @@ void MainWindow::applyTheme()
         }
         #coordVal {
             font-size: 20px;
-            font-family: 'Fira Code', 'Courier New', monospace;
+            font-family: 'Menlo', 'Courier New', monospace;
             font-weight: bold;
             color: #10b981;
         }
@@ -300,7 +300,7 @@ void MainWindow::applyTheme()
         }
         #timeVal {
             font-size: 13px;
-            font-family: 'Fira Code', 'Courier New', monospace;
+            font-family: 'Menlo', 'Courier New', monospace;
             color: #f59e0b;
         }
         QPushButton {
@@ -355,7 +355,7 @@ void MainWindow::applyTheme()
         #txtConsole {
             background-color: #0f172a;
             color: #cbd5e1;
-            font-family: 'Fira Code', 'Courier New', monospace;
+            font-family: 'Menlo', 'Courier New', monospace;
             font-size: 12px;
             border: 1px solid #334155;
             border-radius: 8px;
