@@ -12,6 +12,7 @@ gnss-sdr.log
 gnss_sdr_limesdr_temp.conf
 limesdr_fifo.dat
 gnss_output/
+*.xml
 
 # OS X files
 .DS_Store
