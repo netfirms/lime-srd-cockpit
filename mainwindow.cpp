@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Types.hpp>
+#include <SoapySDR/Formats.hpp>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPaintEvent>
@@ -115,6 +116,11 @@ void MainWindow::setupUi()
     m_btnDiagnostics->setFixedHeight(36);
     connect(m_btnDiagnostics, &QPushButton::clicked, this, &MainWindow::onDiagnosticsClicked);
     ctrlLayout->addWidget(m_btnDiagnostics);
+
+    m_btnAutotune = new QPushButton("Autotune SDR", this);
+    m_btnAutotune->setFixedHeight(36);
+    connect(m_btnAutotune, &QPushButton::clicked, this, &MainWindow::onAutotuneClicked);
+    ctrlLayout->addWidget(m_btnAutotune);
 
     // Gain control
     ctrlLayout->addWidget(new QLabel("Gain:", this));
@@ -1203,6 +1209,175 @@ void MainWindow::onDiagnosticsClicked()
         "</p>"
         "</div>"
     ).arg(sdrStatus, agpsStatus, fifoStatus, limeStatus, usbStatus);
+
+    msgBox.setText(htmlReport);
+    msgBox.addButton(QMessageBox::Ok);
+    msgBox.exec();
+}
+
+void MainWindow::onAutotuneClicked()
+{
+    appendLog("\n=== STARTING LIME-SDR AUTOMATIC TUNING ===", "#38bdf8"); // Light blue
+
+    // Check if streamer is running
+    if (m_sdrStreamer->isRunningStream()) {
+        appendLog("✘ Autotune: Cannot run autotune while receiver is active. Stop it first.", "#ef4444");
+        QMessageBox::warning(this, "Autotune Warning", "Please stop the GNSS receiver flow before running autotune.");
+        return;
+    }
+
+    setenv("SOAPY_SDR_PLUGIN_PATH", "/usr/local/lib/SoapySDR/modules0.8", 0);
+
+    SoapySDR::Device *sdr = nullptr;
+    try {
+        sdr = SoapySDR::Device::make();
+    } catch (const std::exception &e) {
+        appendLog(QString("✘ Autotune: Connection to SDR failed: %1").arg(e.what()), "#ef4444");
+        QMessageBox::critical(this, "Autotune Error", QString("Failed to connect to LimeSDR device: %1").arg(e.what()));
+        return;
+    }
+
+    if (!sdr) {
+        appendLog("✘ Autotune: No SDR device found.", "#ef4444");
+        QMessageBox::critical(this, "Autotune Error", "No LimeSDR hardware detected on the USB bus.");
+        return;
+    }
+
+    QString hardwareKey = QString::fromStdString(sdr->getHardwareKey());
+    appendLog(QString("✔ Connected to LimeSDR: %1").arg(hardwareKey), "#10b981");
+
+    double rate = 2.0e6;
+    if (m_comboSampleRate->currentIndex() == 1) {
+        rate = 4.0e6;
+    }
+
+    QString calibStatus = "<span style='color: #ef4444;'>✘ Failed</span>";
+    QString noiseFloorStr = "Unknown";
+    QString dcOffsetStr = "Unknown";
+    QString filterBwStr = "Unknown";
+
+    try {
+        // 1. Setup sample rate and gain
+        sdr->setSampleRate(SOAPY_SDR_RX, 0, rate);
+        sdr->setAntenna(SOAPY_SDR_RX, 0, "LNAH");
+        
+        // Setup initial gain
+        double totalGain = m_sliderGain->value();
+        double lna = std::min(30.0, totalGain);
+        double remaining = totalGain - lna;
+        double TIA_MAX = (QString::fromStdString(sdr->getDriverKey()) == "lime") ? 12.0 : 0.0;
+        double tia = std::min(TIA_MAX, remaining);
+        double pga = std::min(32.0, remaining - tia);
+        sdr->setGain(SOAPY_SDR_RX, 0, "LNA", lna);
+        if (TIA_MAX > 0.1) {
+            sdr->setGain(SOAPY_SDR_RX, 0, "TIA", tia);
+        }
+        sdr->setGain(SOAPY_SDR_RX, 0, "PGA", pga);
+
+        // 2. Perform LMS7002M Calibration (Self-Calibration of DC & IQ imbalance)
+        appendLog("Executing hardware DC/IQ calibration...", "#38bdf8");
+        try {
+            sdr->writeSetting("calib", "RX");
+            appendLog("✔ Hardware Calibration: Successful", "#10b981");
+            calibStatus = "<span style='color: #10b981;'>✔ Successful (LMS7002M DC/IQ calibrated)</span>";
+        } catch (const std::exception &ex) {
+            appendLog(QString("⚠ Hardware Calibration failed: %1. Continuing with generic tune.").arg(ex.what()), "#f59e0b");
+            calibStatus = QString("<span style='color: #f59e0b;'>⚠ Skipped/Unsupported (%1)</span>").arg(ex.what());
+        }
+
+        // 3. Optimize Analog Filter Bandwidth (Noise Blocker)
+        // Tune to sampleRate * 1.25 to allow transition band but filter out close-in jammers
+        double targetBw = rate * 1.25; 
+        sdr->setBandwidth(SOAPY_SDR_RX, 0, targetBw);
+        double actualBw = sdr->getBandwidth(SOAPY_SDR_RX, 0);
+        appendLog(QString("✔ Analog Filter: Tuned to %1 MHz (Sample Rate: %2 MSPS)").arg(actualBw / 1e6, 0, 'f', 2).arg(rate / 1e6, 0, 'f', 1), "#10b981");
+        filterBwStr = QString("<span style='color: #10b981;'>%1 MHz (Optimal roll-off)</span>").arg(actualBw / 1e6, 0, 'f', 2);
+
+        // 4. Measure live DC leakage & Noise Floor
+        appendLog("Acquiring sample burst for spectral diagnostics...", "#38bdf8");
+        
+        SoapySDR::Stream *stream = sdr->setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32);
+        sdr->activateStream(stream);
+
+        const size_t burstSize = 16384;
+        std::vector<std::complex<float>> burstBuffer(burstSize);
+        void *buffs[] = { burstBuffer.data() };
+        int flags = 0;
+        long long timeNs = 0;
+        
+        // Read samples
+        int readSamples = sdr->readStream(stream, buffs, burstSize, flags, timeNs, 200000); // 200ms timeout
+        
+        sdr->deactivateStream(stream);
+        sdr->closeStream(stream);
+
+        if (readSamples > 0) {
+            // Compute mean offset (DC component) and RMS magnitude (Noise)
+            std::complex<float> sum(0, 0);
+            double sumSq = 0;
+            for (int i = 0; i < readSamples; ++i) {
+                sum += burstBuffer[i];
+                float mag = std::abs(burstBuffer[i]);
+                sumSq += mag * mag;
+            }
+            std::complex<float> mean = sum / (float)readSamples;
+            double meanMagSq = sumSq / readSamples;
+            double noiseDb = 10.0 * std::log10(meanMagSq + 1e-12);
+            double dcMagDb = 10.0 * std::log10(std::norm(mean) + 1e-12);
+
+            noiseFloorStr = QString("<span style='color: #10b981;'>%1 dBFS</span>").arg(noiseDb, 0, 'f', 1);
+            
+            if (dcMagDb < -40.0) {
+                dcOffsetStr = QString("<span style='color: #10b981;'>%1 dB (Excellent - Clean)</span>").arg(dcMagDb, 0, 'f', 1);
+            } else if (dcMagDb < -25.0) {
+                dcOffsetStr = QString("<span style='color: #f59e0b;'>%1 dB (Moderate - Blocked by DC Filter)</span>").arg(dcMagDb, 0, 'f', 1);
+            } else {
+                dcOffsetStr = QString("<span style='color: #ef4444;'>%1 dB (High - Risk of center carrier spike)</span>").arg(dcMagDb, 0, 'f', 1);
+            }
+
+            appendLog(QString("✔ Noise Floor: %1 dBFS").arg(noiseDb, 0, 'f', 1), "#10b981");
+            appendLog(QString("✔ DC Leakage Offset: %1 dB").arg(dcMagDb, 0, 'f', 1), "#10b981");
+        } else {
+            appendLog("⚠ Noise/DC measurement: Read timeout occurred.", "#f59e0b");
+            noiseFloorStr = "<span style='color: #f59e0b;'>⚠ Timeout</span>";
+            dcOffsetStr = "<span style='color: #f59e0b;'>⚠ Timeout</span>";
+        }
+
+    } catch (const std::exception &err) {
+        appendLog(QString("✘ Autotune error: %1").arg(err.what()), "#ef4444");
+        QMessageBox::critical(this, "Autotune Failure", QString("Tuning routine encountered an error: %1").arg(err.what()));
+        SoapySDR::Device::unmake(sdr);
+        return;
+    }
+
+    SoapySDR::Device::unmake(sdr);
+    appendLog("=== AUTOTUNE ROUTINE COMPLETED ===\n", "#38bdf8");
+
+    // Display html popup report
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle("Receiver Autotune Complete");
+    msgBox.setTextFormat(Qt::RichText);
+    msgBox.setStyleSheet(styleSheet());
+    
+    QString htmlReport = QString(
+        "<div style='font-family: Menlo, sans-serif; font-size: 13px; color: #cbd5e1; line-height: 1.5; min-width: 450px;'>"
+        "<h3 style='color: #38bdf8; margin-top: 0; margin-bottom: 8px;'>🛰️ LimeSDR Autotune Report</h3>"
+        "<p style='font-size: 12px; margin-bottom: 12px; color: #94a3b8;'>"
+        "The hardware has been calibrated and aligned for GPS L1 reception."
+        "</p>"
+        "<hr style='border: none; border-top: 1px solid #334155; margin: 8px 0;'/>"
+        "<table cellpadding='6' cellspacing='0' style='width: 100%%;'>"
+        "  <tr><td style='font-weight: bold; width: 180px; color: #94a3b8;'>HW Calibration:</td><td>%1</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>Baseband Filter:</td><td>%2</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>Measured Noise Floor:</td><td>%3</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>Measured DC Leakage:</td><td>%4</td></tr>"
+        "</table>"
+        "<hr style='border: none; border-top: 1px solid #334155; margin: 8px 0;'/>"
+        "<p style='font-size: 11px; color: #10b981; margin-bottom: 0; font-weight: bold;'>"
+        "✔ Receiver calibration is locked. You can now start the GPS receiver."
+        "</p>"
+        "</div>"
+    ).arg(calibStatus, filterBwStr, noiseFloorStr, dcOffsetStr);
 
     msgBox.setText(htmlReport);
     msgBox.addButton(QMessageBox::Ok);

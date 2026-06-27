@@ -80,7 +80,7 @@ void SdrStreamer::run()
     // Configure SDR parameters
     try {
         sdr->setSampleRate(SOAPY_SDR_RX, 0, m_sampleRate);
-        sdr->setBandwidth(SOAPY_SDR_RX, 0, 5.0e6); // 5.0 MHz analog bandwidth
+        sdr->setBandwidth(SOAPY_SDR_RX, 0, m_sampleRate * 1.25); // Optimize filter roll-off for GPS L1 spectrum
         
         // Offset tuning to eliminate DC spike in the GPS band
         sdr->setFrequency(SOAPY_SDR_RX, 0, "RF", 1573.42e6);
