@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Types.hpp>
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -1062,13 +1063,17 @@ void MainWindow::onDiagnosticsClicked()
 {
     appendLog("\n=== STARTING HARDWARE & SYSTEM DIAGNOSTICS ===", "#38bdf8"); // Light blue
 
+    QString sdrStatus, agpsStatus, fifoStatus, limeStatus, usbStatus;
+
     // 1. Check GNSS-SDR installation
     QString gnssSdrPath = "/opt/local/bin/gnss-sdr";
     QFileInfo sdrInfo(gnssSdrPath);
     if (sdrInfo.exists() && sdrInfo.isExecutable()) {
         appendLog("✔ GNSS-SDR Binary: FOUND and EXECUTABLE at " + gnssSdrPath, "#10b981");
+        sdrStatus = "<span style='color: #10b981;'>✔ Found &amp; Executable</span>";
     } else {
         appendLog("✘ GNSS-SDR Binary: MISSING or NOT EXECUTABLE at " + gnssSdrPath, "#ef4444");
+        sdrStatus = "<span style='color: #ef4444;'>✘ Missing or Not Executable</span>";
     }
 
     // 2. Check A-GPS Assistance Files
@@ -1085,8 +1090,10 @@ void MainWindow::onDiagnosticsClicked()
     }
     if (allAgpsExist) {
         appendLog("✔ A-GPS Status: Ready for instant PVT fix.", "#10b981");
+        agpsStatus = "<span style='color: #10b981;'>✔ Ready (A-GPS Active)</span>";
     } else {
         appendLog("⚠ A-GPS Status: Missing files. Receiver will fallback to slow over-the-air decoding.", "#f59e0b");
+        agpsStatus = "<span style='color: #f59e0b;'>⚠ Incomplete (Slow OTA Fallback)</span>";
     }
 
     // 3. Test FIFO creation
@@ -1094,12 +1101,16 @@ void MainWindow::onDiagnosticsClicked()
     QFileInfo fifoInfo(m_fifoPath);
     if (fifoInfo.exists() && fifoInfo.isWritable()) {
         appendLog("✔ FIFO Pipe: Configured correctly at " + m_fifoPath, "#10b981");
+        fifoStatus = "<span style='color: #10b981;'>✔ Configured &amp; Writable</span>";
     } else {
         appendLog("✘ FIFO Pipe: FAILED to write or create at " + m_fifoPath, "#ef4444");
+        fifoStatus = "<span style='color: #ef4444;'>✘ Failed to Create</span>";
     }
 
     // 4. Test LimeSDR connection via SoapySDR
     appendLog("Scanning USB Bus for LimeSDR hardware...", "#38bdf8");
+    limeStatus = "<span style='color: #ef4444;'>✘ Not Detected</span>";
+    usbStatus = "<span style='color: #64748b;'>Unknown</span>";
     
     // Set soapy plugin path for Mac OS to make sure it loads LimeSuite
     setenv("SOAPY_SDR_PLUGIN_PATH", "/usr/local/lib/SoapySDR/modules0.8", 0);
@@ -1117,18 +1128,24 @@ void MainWindow::onDiagnosticsClicked()
                 appendLog(QString("  - Driver: %1").arg(driver), "#94a3b8");
                 appendLog(QString("  - Model: %1").arg(hardware), "#94a3b8");
                 
+                QString serial = deviceArgs.count("serial") ? QString::fromStdString(deviceArgs.at("serial")) : "Unknown";
                 if (deviceArgs.count("serial")) {
-                    appendLog(QString("  - Serial Number: %1").arg(QString::fromStdString(deviceArgs.at("serial"))), "#94a3b8");
+                    appendLog(QString("  - Serial Number: %1").arg(serial), "#94a3b8");
                 }
+                
+                limeStatus = QString("<span style='color: #10b981;'>✔ Detected (%1)</span>").arg(hardware);
                 
                 // Check USB Speed
                 QString label = deviceArgs.count("label") ? QString::fromStdString(deviceArgs.at("label")) : "";
                 if (label.contains("USB 3.0", Qt::CaseInsensitive)) {
                     appendLog("✔ USB Interface Speed: USB 3.0 (SUPER SPEED - OK)", "#10b981");
+                    usbStatus = "<span style='color: #10b981;'>✔ USB 3.0 (Super Speed - OK)</span>";
                 } else if (label.contains("USB 2.0", Qt::CaseInsensitive)) {
                     appendLog("⚠ USB Interface Speed: USB 2.0 (DEGRADED - High risk of overflows/dropouts)", "#f59e0b");
+                    usbStatus = "<span style='color: #f59e0b;'>⚠ USB 2.0 (Degraded - Overflow Risk)</span>";
                 } else {
                     appendLog("⚠ USB Interface Speed: Unknown (Check connection to a blue USB 3.0 port)", "#f59e0b");
+                    usbStatus = "<span style='color: #f59e0b;'>⚠ Unknown (Check port)</span>";
                 }
             }
         }
@@ -1138,7 +1155,36 @@ void MainWindow::onDiagnosticsClicked()
         }
     } catch (const std::exception &e) {
         appendLog(QString("✘ SoapySDR Diagnostics Error: %1").arg(e.what()), "#ef4444");
+        limeStatus = QString("<span style='color: #ef4444;'>✘ Driver Error: %1</span>").arg(e.what());
     }
 
     appendLog("=== DIAGNOSTICS COMPLETED ===\n", "#38bdf8");
+
+    // Display Custom QMessageBox Dialog
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle("Hardware Diagnostics Report");
+    msgBox.setTextFormat(Qt::RichText);
+    msgBox.setStyleSheet(styleSheet());
+    
+    QString htmlReport = QString(
+        "<div style='font-family: Menlo, sans-serif; font-size: 13px; color: #cbd5e1; line-height: 1.5; min-width: 420px;'>"
+        "<h3 style='color: #38bdf8; margin-top: 0; margin-bottom: 8px;'>🛰️ Hardware &amp; System Diagnostics</h3>"
+        "<hr style='border: none; border-top: 1px solid #334155; margin: 8px 0;'/>"
+        "<table cellpadding='6' cellspacing='0' style='width: 100%%;'>"
+        "  <tr><td style='font-weight: bold; width: 160px; color: #94a3b8;'>GNSS-SDR Binary:</td><td style='font-family: Menlo;'>%1</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>A-GPS Assistance:</td><td style='font-family: Menlo;'>%2</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>FIFO Pipe:</td><td style='font-family: Menlo;'>%3</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>LimeSDR Device:</td><td style='font-family: Menlo;'>%4</td></tr>"
+        "  <tr><td style='font-weight: bold; color: #94a3b8;'>USB Connection:</td><td style='font-family: Menlo;'>%5</td></tr>"
+        "</table>"
+        "<hr style='border: none; border-top: 1px solid #334155; margin: 8px 0;'/>"
+        "<p style='font-size: 11px; color: #64748b; margin-bottom: 0;'>"
+        "Detailed logs have been written to the System Console tab."
+        "</p>"
+        "</div>"
+    ).arg(sdrStatus, agpsStatus, fifoStatus, limeStatus, usbStatus);
+
+    msgBox.setText(htmlReport);
+    msgBox.addButton(QMessageBox::Ok);
+    msgBox.exec();
 }
