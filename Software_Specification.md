@@ -16,15 +16,15 @@ The High-Level Architecture describes how the Cockpit fits into the physical wor
 graph TD
     User([End User])
     
-    subgraph Host [macOS Host System]
-        Cockpit[LimeSDR GNSS Cockpit \n (Qt6 / C++)]
-        GNSS_SDR[gnss-sdr \n (Standalone DSP Engine)]
-        Files[(File System)]
+    subgraph Host ["macOS Host System"]
+        Cockpit["LimeSDR GNSS Cockpit <br> (Qt6 / C++)"]
+        GNSS_SDR["gnss-sdr <br> (Standalone DSP Engine)"]
+        Files[("File System")]
     end
     
-    subgraph Hardware [Physical Hardware]
-        LimeSDR[LimeSDR-USB \n (SDR Hardware)]
-        Antenna((Active GNSS Antenna))
+    subgraph Hardware ["Physical Hardware"]
+        LimeSDR["LimeSDR-USB <br> (SDR Hardware)"]
+        Antenna(("Active GNSS Antenna"))
     end
     
     User <-->|GUI / CLI| Cockpit
@@ -52,24 +52,24 @@ The software architecture relies heavily on multi-threading to ensure the UI rem
 
 ```mermaid
 flowchart LR
-    subgraph Process 1: LimeSrdCockpit
-        UI[Main GUI Thread]
-        NMEA[NMEA Parser]
+    subgraph P1 ["Process 1: LimeSrdCockpit"]
+        UI["Main GUI Thread"]
+        NMEA["NMEA Parser"]
         
-        subgraph Worker Threads
-            SdrStreamer[[SdrStreamer Thread]]
-            SdrScanner[[SdrScanner Thread]]
+        subgraph WThreads ["Worker Threads"]
+            SdrStreamer[["SdrStreamer Thread"]]
+            SdrScanner[["SdrScanner Thread"]]
         end
     end
 
-    subgraph Process 2: gnss-sdr
-        DSP[GNSS Correlation & Tracking]
+    subgraph P2 ["Process 2: gnss-sdr"]
+        DSP["GNSS Correlation & Tracking"]
     end
     
-    subgraph IPC / File IO
-        FIFO[(POSIX FIFO Pipe)]
-        LOG[(gnss-sdr.log)]
-        NMEA_FILE[(PVT Output .nmea)]
+    subgraph IPC ["IPC / File IO"]
+        FIFO[("POSIX FIFO Pipe")]
+        LOG[("gnss-sdr.log")]
+        NMEA_FILE[("PVT Output .nmea")]
     end
 
     UI -->|Start/Stop/Config| SdrStreamer
@@ -217,35 +217,35 @@ The `AntennaTestDialog` employs a state machine to orchestrate the measurement o
 
 ```mermaid
 stateDiagram-v2
-    [*] --> INIT: User opens dialog
+    [*] --> INIT : User opens dialog
     
-    INIT --> MEASURING_PLUGGED: User clicks "Start Test"
+    INIT --> MEASURING_PLUGGED : User clicks "Start Test"
     
     state MEASURING_PLUGGED {
         direction LR
-        StreamOn1: SDR Streams to /dev/null
-        Measure1: Accumulate powerDb
-        StreamOn1 --> Measure1: 3 seconds
+        StreamOn1 : SDR Streams to dev null
+        Measure1 : Accumulate powerDb
+        StreamOn1 --> Measure1 : 3 seconds
     }
     
-    MEASURING_PLUGGED --> WAITING_UNPLUG: Timeout
+    MEASURING_PLUGGED --> WAITING_UNPLUG : Timeout
     
-    WAITING_UNPLUG --> MEASURING_UNPLUGGED: User unplugs & clicks "Ready"
+    WAITING_UNPLUG --> MEASURING_UNPLUGGED : User unplugs & clicks "Ready"
     
     state MEASURING_UNPLUGGED {
         direction LR
-        StreamOn2: SDR Streams to /dev/null
-        Measure2: Accumulate powerDb
-        StreamOn2 --> Measure2: 3 seconds
+        StreamOn2 : SDR Streams to dev null
+        Measure2 : Accumulate powerDb
+        StreamOn2 --> Measure2 : 3 seconds
     }
     
-    MEASURING_UNPLUGGED --> FINISHED: Timeout
+    MEASURING_UNPLUGGED --> FINISHED : Timeout
     
     state FINISHED {
-        calc: Compare Plugged vs Unplugged
+        calc : Compare Plugged vs Unplugged
     }
     
-    FINISHED --> [*]: User closes dialog
+    FINISHED --> [*] : User closes dialog
 ```
 
 ---
