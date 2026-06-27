@@ -436,32 +436,30 @@ void MainWindow::writeGnssSdrConfig()
     out << "Acquisition_1C.implementation=GPS_L1_CA_PCPS_Acquisition\n";
     out << "Acquisition_1C.item_type=gr_complex\n";
     out << "Acquisition_1C.coherent_integration_time_ms=1\n";
-    out << "Acquisition_1C.threshold=2.0\n"; // 2.0 threshold from extended fixed
+    out << "Acquisition_1C.threshold=2.5\n"; // 2.5 threshold optimized for LimeSDR
     out << "Acquisition_1C.doppler_max=5000\n";
     out << "Acquisition_1C.doppler_step=250\n";
-    out << "Acquisition_1C.max_dwells=10\n"; // 10 dwells from extended fixed
+    out << "Acquisition_1C.max_dwells=5\n"; // 5 dwells to speed up scan
     out << "Acquisition_1C.blocking=true\n";
     out << "Acquisition_1C.repeat_satellite=true\n";
     out << "Acquisition_1C.dump=false\n\n";
 
     out << "Tracking_1C.implementation=GPS_L1_CA_DLL_PLL_Tracking\n";
     out << "Tracking_1C.item_type=gr_complex\n";
-    out << "Tracking_1C.pll_bw_hz=15.0\n"; // 15.0 Hz pull-in from extended fixed
-    out << "Tracking_1C.dll_bw_hz=1.0\n";
-    out << "Tracking_1C.pull_in_time_ms=10000\n"; // 10s pull-in, then switch to extended mode
-    out << "Tracking_1C.pll_bw_narrow_hz=5.0\n"; // tight narrow loop for phase noise rejection
-    out << "Tracking_1C.dll_bw_narrow_hz=0.5\n";
+    out << "Tracking_1C.pll_bw_hz=35.0\n"; // Wide pull-in bandwidth (35 Hz)
+    out << "Tracking_1C.dll_bw_hz=2.0\n";
+    out << "Tracking_1C.pull_in_time_ms=20000\n"; // 20s pull-in time to allow FLL convergence
+    out << "Tracking_1C.pll_bw_narrow_hz=25.0\n"; // Keep PLL narrow bandwidth wide (25 Hz) to handle phase noise
+    out << "Tracking_1C.dll_bw_narrow_hz=2.0\n";
     out << "Tracking_1C.early_late_space_chips=0.5\n";
     out << "Tracking_1C.early_late_space_narrow_chips=0.25\n";
-    out << "Tracking_1C.extend_correlation_symbols=20\n"; // 20ms coherent integration (+13dB gain)
     out << "Tracking_1C.enable_fll_pull_in=true\n";
     out << "Tracking_1C.fll_bw_hz=10.0\n";
-    out << "Tracking_1C.enable_fll_steady_state=false\n";
-    out << "Tracking_1C.order=2\n";
+    out << "Tracking_1C.enable_fll_steady_state=true\n"; // Keep FLL active to prevent phase tracking slips
+    out << "Tracking_1C.order=3\n"; // 3rd order loop handles Doppler rate dynamically
     out << "Tracking_1C.cn0_min=0\n";
-    out << "Tracking_1C.max_lock_fail=200000\n"; // fix short time lock (200k samples = 200s lock limit)
-    out << "Tracking_1C.max_carrier_lock_fail=200000\n"; // override carrier lock limit
-    out << "Tracking_1C.carrier_lock_th=0.01\n";
+    out << "Tracking_1C.max_lock_fail=50000\n"; // Keep lock alive for up to 50s
+    out << "Tracking_1C.carrier_lock_th=0.05\n"; // Relaxed lock threshold (0.05) to survive weak signals
     out << "Tracking_1C.dump=false\n\n";
 
     out << "TelemetryDecoder_1C.implementation=GPS_L1_CA_Telemetry_Decoder\n";
@@ -778,6 +776,8 @@ void MainWindow::readNmeaFile()
     while (in.readLineInto(&line)) {
         if (m_nmeaParser.parseLine(line)) {
             parsedAny = true;
+            qDebug() << "[NMEA]" << line.trimmed();
+            appendLog("[NMEA] " + line.trimmed(), "#10b981");
         }
     }
 
