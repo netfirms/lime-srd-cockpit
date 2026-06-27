@@ -176,11 +176,11 @@ This sequence diagram illustrates the complex startup sequence and data flow pip
 ```mermaid
 sequenceDiagram
     actor User
-    participant Main as MainWindow (UI)
-    participant QTh as SdrStreamer (QThread)
-    participant SDR as SoapySDR (Hardware)
-    participant Pipe as POSIX FIFO (.fifo)
-    participant GNSS as gnss-sdr (QProcess)
+    participant Main as "MainWindow (UI)"
+    participant QTh as "SdrStreamer (QThread)"
+    participant SDR as "SoapySDR (Hardware)"
+    participant Pipe as "POSIX FIFO (.fifo)"
+    participant GNSS as "gnss-sdr (QProcess)"
 
     User->>Main: Click "Start Receiver"
     Main->>Main: Generate gnss-sdr.conf
@@ -189,7 +189,7 @@ sequenceDiagram
     Main->>QTh: startStreaming(path)
     activate QTh
     QTh->>SDR: Setup & Initialize LimeSDR
-    QTh->>Pipe: open(O_WRONLY | O_NONBLOCK)
+    QTh->>Pipe: open(O_WRONLY, O_NONBLOCK)
     Note right of QTh: Loops until gnss-sdr attaches reader
     
     Main->>GNSS: QProcess::start("gnss-sdr")
