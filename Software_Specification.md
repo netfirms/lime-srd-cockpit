@@ -31,7 +31,7 @@ graph TD
     Cockpit <-->|libusb / SoapySDR API| LimeSDR
     LimeSDR <-->|Bias-Tee Power / RF In| Antenna
     
-    Cockpit -->|IQ Samples (Named Pipe)| GNSS_SDR
+    Cockpit -->|IQ Samples - Named Pipe| GNSS_SDR
     Cockpit -->|Generates Config| Files
     GNSS_SDR -->|Reads Config| Files
     GNSS_SDR -->|NMEA 0183 & Logs| Files
