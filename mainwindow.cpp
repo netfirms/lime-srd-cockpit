@@ -2,6 +2,8 @@
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Types.hpp>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -182,7 +184,7 @@ void MainWindow::setupUi()
 
     // PVT Group Box
     QGroupBox *pvtGroup = new QGroupBox("GPS Position Velocity Time (PVT)", this);
-    pvtGroup->setFixedWidth(400);
+    pvtGroup->setFixedWidth(340);
     midLayout->addWidget(pvtGroup);
     
     QFormLayout *pvtLayout = new QFormLayout(pvtGroup);
@@ -240,6 +242,17 @@ void MainWindow::setupUi()
     QLabel *satsPlaceholder = new QLabel("Waiting for satellite acquisition...", this);
     satsPlaceholder->setAlignment(Qt::AlignCenter);
     satsBarLayout->addWidget(satsPlaceholder);
+
+    // Satellite Skyplot Group Box
+    QGroupBox *skyplotGroup = new QGroupBox("GPS Constellation Skyplot", this);
+    skyplotGroup->setFixedWidth(280);
+    midLayout->addWidget(skyplotGroup);
+    
+    QVBoxLayout *skyLayout = new QVBoxLayout(skyplotGroup);
+    skyLayout->setContentsMargins(6, 6, 6, 6);
+    m_skyplot = new SkyplotWidget(this);
+    m_skyplot->setMinimumSize(220, 220);
+    skyLayout->addWidget(m_skyplot);
 
     // 4. Bottom Section: Channel Status (8 Channels Grid)
     QGroupBox *chanGroup = new QGroupBox("Channel Tracking Status", this);
@@ -874,6 +887,7 @@ void MainWindow::readNmeaFile()
             m_lblUtcTime->setText(pos.utcDateTime.toString("yyyy-MM-dd HH:mm:ss") + " UTC");
             m_lblLocalTime->setText(pos.utcDateTime.toLocalTime().toString("yyyy-MM-dd HH:mm:ss"));
         }
+        m_skyplot->setSatellites(m_nmeaParser.getSatellites());
     }
 }
 
@@ -1210,5 +1224,89 @@ void MainWindow::updatePowerLabelDisplay()
         m_lblPower->setStyleSheet("color: #ef4444; font-weight: bold;"); // Red (saturation)
     } else {
         m_lblPower->setStyleSheet("color: #3b82f6; font-weight: bold;"); // Blue
+    }
+}
+
+void SkyplotWidget::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Fill background with slate-950 dark tone
+    painter.fillRect(rect(), QColor("#0f172a"));
+
+    int w = width();
+    int h = height();
+    int size = qMin(w, h) - 24;
+    int centerX = w / 2;
+    int centerY = h / 2;
+    int radius = size / 2;
+
+    if (radius <= 0) return;
+
+    // Draw concentric rings (elevation levels: 0, 30, 60 degrees)
+    QPen ringPen(QColor("#334155"), 1, Qt::DashLine);
+    painter.setPen(ringPen);
+    painter.setBrush(Qt::NoBrush);
+
+    // 0 deg elevation (outer horizon ring)
+    painter.drawEllipse(centerX - radius, centerY - radius, radius * 2, radius * 2);
+    // 30 deg elevation
+    painter.drawEllipse(centerX - radius * 2/3, centerY - radius * 2/3, radius * 4/3, radius * 4/3);
+    // 60 deg elevation
+    painter.drawEllipse(centerX - radius * 1/3, centerY - radius * 1/3, radius * 2/3, radius * 2/3);
+
+    // Draw crosshairs
+    painter.drawLine(centerX, centerY - radius, centerX, centerY + radius);
+    painter.drawLine(centerX - radius, centerY, centerX + radius, centerY);
+
+    // Draw cardinal direction markers
+    painter.setPen(QColor("#94a3b8"));
+    QFont labelFont = font();
+    labelFont.setPointSize(10);
+    labelFont.setBold(true);
+    painter.setFont(labelFont);
+    
+    painter.drawText(centerX - 5, centerY - radius + 15, "N");
+    painter.drawText(centerX - 5, centerY + radius - 5, "S");
+    painter.drawText(centerX + radius - 15, centerY + 5, "E");
+    painter.drawText(centerX - radius + 5, centerY + 5, "W");
+
+    // Draw satellites
+    for (auto it = m_sats.begin(); it != m_sats.end(); ++it) {
+        const SatelliteInfo &sat = it.value();
+        
+        // Skip invalid elevation bounds
+        if (sat.elevation < 0 || sat.elevation > 90) continue;
+
+        // Convert elevation and azimuth to polar coordinates
+        // r = 0 for 90 deg (zenith at center), r = radius for 0 deg (horizon at edge)
+        double r = radius * (90.0 - sat.elevation) / 90.0;
+        double angleRad = (sat.azimuth - 90.0) * M_PI / 180.0;
+
+        int satX = centerX + r * cos(angleRad);
+        int satY = centerY + r * sin(angleRad);
+
+        // Color points based on SNR (C/N0 dB-Hz)
+        QColor satColor;
+        if (sat.snr >= 38) satColor = QColor("#10b981"); // Strong (Green)
+        else if (sat.snr >= 25) satColor = QColor("#f59e0b"); // Moderate (Orange)
+        else if (sat.snr > 0) satColor = QColor("#ef4444"); // Weak (Red)
+        else satColor = QColor("#64748b"); // Acquired but no SNR yet (Slate)
+
+        painter.setBrush(satColor);
+        painter.setPen(QPen(QColor("#ffffff"), 1));
+        
+        // Draw satellite circle
+        painter.drawEllipse(satX - 9, satY - 9, 18, 18);
+
+        // Draw PRN number label inside the circle
+        painter.setPen(QColor("#ffffff"));
+        QFont prnFont = font();
+        prnFont.setPointSize(8);
+        prnFont.setBold(true);
+        painter.setFont(prnFont);
+        painter.drawText(satX - 6, satY + 3, QString::number(sat.prn).rightJustified(2, '0'));
     }
 }

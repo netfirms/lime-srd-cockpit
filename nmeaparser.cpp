@@ -14,6 +14,7 @@ void NmeaParser::clear()
 {
     m_position = GpsPosition();
     m_satellitesSnr.clear();
+    m_satellites.clear();
 }
 
 double NmeaParser::parseDmToDd(const QString &dm, const QString &hemisphere)
@@ -147,15 +148,21 @@ bool NmeaParser::parseLine(const QString &line)
             for (int i = 4; i < parts.size() - 3; i += 4) {
                 if (i + 3 < parts.size()) {
                     QString prnStr = parts[i];
+                    QString eleStr = parts[i + 1];
+                    QString aziStr = parts[i + 2];
                     QString snrStr = parts[i + 3];
                     if (!prnStr.isEmpty()) {
                         int prn = prnStr.toInt();
                         if (prn > 0) {
-                            if (!snrStr.isEmpty()) {
-                                m_satellitesSnr[prn] = snrStr.toInt();
-                            } else {
-                                m_satellitesSnr[prn] = 0;
-                            }
+                            int snrVal = snrStr.isEmpty() ? 0 : snrStr.toInt();
+                            m_satellitesSnr[prn] = snrVal;
+                            
+                            SatelliteInfo sat;
+                            sat.prn = prn;
+                            sat.elevation = eleStr.isEmpty() ? 0 : eleStr.toInt();
+                            sat.azimuth = aziStr.isEmpty() ? 0 : aziStr.toInt();
+                            sat.snr = snrVal;
+                            m_satellites[prn] = sat;
                         }
                     }
                 }

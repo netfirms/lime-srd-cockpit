@@ -23,6 +23,24 @@ struct ChannelState {
     qint64 lockDuration = 0;
 };
 
+class SkyplotWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SkyplotWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    
+    void setSatellites(const QMap<int, SatelliteInfo> &sats) {
+        m_sats = sats;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QMap<int, SatelliteInfo> m_sats;
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -104,6 +122,7 @@ private:
 
     QWidget *m_channelsContainer;
     QWidget *m_satsContainer;
+    SkyplotWidget *m_skyplot;
     QTextEdit *m_txtConsole;
 };
 

@@ -87,7 +87,24 @@ void SdrStreamer::run()
         sdr->setFrequency(SOAPY_SDR_RX, 0, "BB", 2.0e6);
         
         sdr->setAntenna(SOAPY_SDR_RX, 0, "LNAH"); // RX0 port (RX1_H on case)
-        sdr->setGain(SOAPY_SDR_RX, 0, m_gain);
+        // Optimize noise figure for weak GNSS signals by prioritizing LNA and TIA gains
+        double totalGain = m_gain;
+        try {
+            double lna = std::min(30.0, totalGain);
+            double remaining = totalGain - lna;
+            double TIA_MAX = (QString::fromStdString(sdr->getDriverKey()) == "lime") ? 12.0 : 0.0;
+            double tia = std::min(TIA_MAX, remaining);
+            double pga = std::min(32.0, remaining - tia);
+            
+            sdr->setGain(SOAPY_SDR_RX, 0, "LNA", lna);
+            if (TIA_MAX > 0.1) {
+                sdr->setGain(SOAPY_SDR_RX, 0, "TIA", tia);
+            }
+            sdr->setGain(SOAPY_SDR_RX, 0, "PGA", pga);
+            emit logMessage(QString("[SDR] Initial Gain optimized: LNA=%1, TIA=%2, PGA=%3").arg(lna).arg(tia).arg(pga));
+        } catch (...) {
+            sdr->setGain(SOAPY_SDR_RX, 0, totalGain);
+        }
         
         // Enable Bias Tee if requested
         if (m_enableBiasTee) {
@@ -167,11 +184,28 @@ void SdrStreamer::run()
         double currentGain = m_gain;
         if (std::abs(currentGain - lastAppliedGain) > 0.1) {
             try {
-                sdr->setGain(SOAPY_SDR_RX, 0, currentGain);
+                double lna = std::min(30.0, currentGain);
+                double remaining = currentGain - lna;
+                double TIA_MAX = (QString::fromStdString(sdr->getDriverKey()) == "lime") ? 12.0 : 0.0;
+                double tia = std::min(TIA_MAX, remaining);
+                double pga = std::min(32.0, remaining - tia);
+                
+                sdr->setGain(SOAPY_SDR_RX, 0, "LNA", lna);
+                if (TIA_MAX > 0.1) {
+                    sdr->setGain(SOAPY_SDR_RX, 0, "TIA", tia);
+                }
+                sdr->setGain(SOAPY_SDR_RX, 0, "PGA", pga);
+                
                 lastAppliedGain = currentGain;
-                emit logMessage(QString("[SDR] Dynamic gain updated to %1 dB").arg(currentGain));
-            } catch (const std::exception &e) {
-                emit logMessage(QString("[SDR] WARNING: Failed to update dynamic gain: %1").arg(e.what()));
+                emit logMessage(QString("[SDR] Dynamic Gain optimized: LNA=%1, TIA=%2, PGA=%3").arg(lna).arg(tia).arg(pga));
+            } catch (...) {
+                try {
+                    sdr->setGain(SOAPY_SDR_RX, 0, currentGain);
+                    lastAppliedGain = currentGain;
+                    emit logMessage(QString("[SDR] Dynamic gain updated to %1 dB").arg(currentGain));
+                } catch (const std::exception &e) {
+                    emit logMessage(QString("[SDR] WARNING: Failed to update dynamic gain: %1").arg(e.what()));
+                }
             }
         }
 
