@@ -53,6 +53,7 @@ private:
     void updateChannelsDisplay();
     void updateSatellitesDisplay();
     void appendLog(const QString &msg, const QString &color = "#a0a0a0");
+    void updatePowerLabelDisplay();
 
     // Backend
     SdrStreamer *m_sdrStreamer;
@@ -85,6 +86,7 @@ private:
     QLabel *m_lblGainVal;
     QCheckBox *m_chkBiasTee;
     QCheckBox *m_chkAdaptiveGain;
+    QCheckBox *m_chkRecordIq;
 
     QLabel *m_lblStatus;
     QLabel *m_lblPower;

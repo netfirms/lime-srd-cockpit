@@ -144,6 +144,12 @@ void MainWindow::setupUi()
     m_chkAdaptiveGain->setToolTip("Automatically adjust RF gain to maintain optimal ADC power level (-20 to -15 dBFS)");
     ctrlLayout->addWidget(m_chkAdaptiveGain);
 
+    // Record Raw IQ control
+    m_chkRecordIq = new QCheckBox("Record Raw IQ (.bin)", this);
+    m_chkRecordIq->setChecked(false); // default OFF
+    m_chkRecordIq->setToolTip("Record raw complex-float IQ samples to 'limesdr_raw_gps.bin' for offline research");
+    ctrlLayout->addWidget(m_chkRecordIq);
+
     ctrlLayout->addStretch();
 
     // 2. Status Ribbon
@@ -509,6 +515,7 @@ void MainWindow::onStartClicked()
     m_btnStart->setEnabled(false);
     m_comboSampleRate->setEnabled(false);
     m_chkBiasTee->setEnabled(false);
+    m_chkRecordIq->setEnabled(false);
     
     // Reset indicators
     m_lblStatus->setText("RECEIVER STATE: CONNECTING");
@@ -543,8 +550,9 @@ void MainWindow::onStartClicked()
     }
     double gain = m_sliderGain->value();
     bool enableBiasTee = m_chkBiasTee->isChecked();
-
-    m_sdrStreamer->startStreaming(m_fifoPath, rate, gain, enableBiasTee);
+    bool recordIq = m_chkRecordIq->isChecked();
+ 
+    m_sdrStreamer->startStreaming(m_fifoPath, rate, gain, enableBiasTee, recordIq);
 
     // 2. Start GNSS-SDR Process
     appendLog("Launching GNSS-SDR process...", "#3b82f6");
@@ -617,6 +625,7 @@ void MainWindow::onStopClicked()
     m_btnStop->setEnabled(false);
     m_comboSampleRate->setEnabled(true);
     m_chkBiasTee->setEnabled(true);
+    m_chkRecordIq->setEnabled(true);
 
     appendLog("GPS Receiver stopped.", "#ef4444");
 }
@@ -632,13 +641,7 @@ void MainWindow::onGainSliderChanged(int value)
 void MainWindow::onPowerMeasured(double powerDb)
 {
     m_currentPowerDb = powerDb;
-    m_lblPower->setText(QString("RF POWER: %1 dBFS").arg(powerDb, 0, 'f', 1));
-    // Color alert for saturation
-    if (powerDb > -5.0) {
-        m_lblPower->setStyleSheet("color: #ef4444; font-weight: bold;"); // Red (saturation)
-    } else {
-        m_lblPower->setStyleSheet("color: #3b82f6; font-weight: bold;"); // Blue
-    }
+    updatePowerLabelDisplay();
 
     // Adaptive Gain Tuning
     if (m_chkAdaptiveGain->isChecked() && m_sdrStreamer->isRunningStream()) {
@@ -720,6 +723,9 @@ void MainWindow::onPeriodicUpdate()
     readNmeaFile();
     updateChannelsDisplay();
     updateSatellitesDisplay();
+    if (m_chkRecordIq->isChecked() && m_sdrStreamer->isRunningStream()) {
+        updatePowerLabelDisplay();
+    }
 }
 
 void MainWindow::readGnssLog()
@@ -1187,4 +1193,22 @@ void MainWindow::onDiagnosticsClicked()
     msgBox.setText(htmlReport);
     msgBox.addButton(QMessageBox::Ok);
     msgBox.exec();
+}
+
+void MainWindow::updatePowerLabelDisplay()
+{
+    QString labelText = QString("RF POWER: %1 dBFS").arg(m_currentPowerDb, 0, 'f', 1);
+    if (m_chkRecordIq->isChecked() && m_sdrStreamer->isRunningStream()) {
+        QFileInfo recordFileInfo("limesdr_raw_gps.bin");
+        double sizeMb = recordFileInfo.exists() ? (recordFileInfo.size() / (1024.0 * 1024.0)) : 0.0;
+        labelText += QString(" (Rec: %1 MB)").arg(sizeMb, 0, 'f', 1);
+    }
+    m_lblPower->setText(labelText);
+
+    // Color alert for saturation
+    if (m_currentPowerDb > -5.0) {
+        m_lblPower->setStyleSheet("color: #ef4444; font-weight: bold;"); // Red (saturation)
+    } else {
+        m_lblPower->setStyleSheet("color: #3b82f6; font-weight: bold;"); // Blue
+    }
 }

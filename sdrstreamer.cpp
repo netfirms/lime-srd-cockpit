@@ -18,6 +18,7 @@ SdrStreamer::SdrStreamer(QObject *parent)
     , m_sampleRate(2e6)
     , m_gain(60.0)
     , m_enableBiasTee(false)
+    , m_recordIq(false)
     , m_running(false)
 {
 }
@@ -28,12 +29,13 @@ SdrStreamer::~SdrStreamer()
     wait();
 }
 
-void SdrStreamer::startStreaming(const QString &fifoPath, double sampleRate, double gain, bool enableBiasTee)
+void SdrStreamer::startStreaming(const QString &fifoPath, double sampleRate, double gain, bool enableBiasTee, bool recordIq)
 {
     m_fifoPath = fifoPath;
     m_sampleRate = sampleRate;
     m_gain = gain;
     m_enableBiasTee = enableBiasTee;
+    m_recordIq = recordIq;
     m_running = true;
     start();
 }
@@ -142,6 +144,16 @@ void SdrStreamer::run()
         return;
     }
 
+    QFile recordFile;
+    if (m_recordIq) {
+        recordFile.setFileName("limesdr_raw_gps.bin");
+        if (recordFile.open(QIODevice::WriteOnly)) {
+            emit logMessage("Started recording raw IQ samples to limesdr_raw_gps.bin");
+        } else {
+            emit logMessage("ERROR: Failed to open limesdr_raw_gps.bin for recording!");
+        }
+    }
+
     const size_t bufferSize = 8192;
     std::vector<std::complex<float>> buffer(bufferSize);
     void *buffs[] = { buffer.data() };
@@ -178,6 +190,11 @@ void SdrStreamer::run()
                 }
             }
 
+            // Write raw IQ to record file if enabled
+            if (recordFile.isOpen()) {
+                recordFile.write(reinterpret_cast<const char*>(buffer.data()), bytesToWrite);
+            }
+
             // Compute power periodically
             lastPowerPrintTime += ret;
             if (lastPowerPrintTime >= m_sampleRate) { // Approx once per second
@@ -203,6 +220,10 @@ void SdrStreamer::run()
 
     // Cleanup
     emit logMessage("Stopping SDR stream...");
+    if (recordFile.isOpen()) {
+        recordFile.close();
+        emit logMessage("Stopped recording raw IQ samples.");
+    }
     ::close(fd);
     sdr->deactivateStream(rxStream);
     sdr->closeStream(rxStream);
