@@ -82,6 +82,7 @@ private:
     QSlider *m_sliderGain;
     QLabel *m_lblGainVal;
     QCheckBox *m_chkBiasTee;
+    QCheckBox *m_chkAdaptiveGain;
 
     QLabel *m_lblStatus;
     QLabel *m_lblPower;

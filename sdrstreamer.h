@@ -14,6 +14,7 @@ public:
 
     void startStreaming(const QString &fifoPath, double sampleRate, double gain, bool enableBiasTee);
     void stopStreaming();
+    void setDynamicGain(double gain);
     bool isRunningStream() const { return m_running; }
 
 signals:
@@ -27,7 +28,7 @@ protected:
 private:
     QString m_fifoPath;
     double m_sampleRate;
-    double m_gain;
+    std::atomic<double> m_gain;
     bool m_enableBiasTee;
     std::atomic<bool> m_running;
 };

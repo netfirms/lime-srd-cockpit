@@ -43,6 +43,11 @@ void SdrStreamer::stopStreaming()
     m_running = false;
 }
 
+void SdrStreamer::setDynamicGain(double gain)
+{
+    m_gain = gain;
+}
+
 void SdrStreamer::run()
 {
     emit logMessage("Starting SDR Thread...");
@@ -142,9 +147,22 @@ void SdrStreamer::run()
     void *buffs[] = { buffer.data() };
     
     int lastPowerPrintTime = 0;
+    double lastAppliedGain = m_gain;
     
     // Core Streaming Loop
     while (m_running) {
+        // Check for dynamic gain changes
+        double currentGain = m_gain;
+        if (std::abs(currentGain - lastAppliedGain) > 0.1) {
+            try {
+                sdr->setGain(SOAPY_SDR_RX, 0, currentGain);
+                lastAppliedGain = currentGain;
+                emit logMessage(QString("[SDR] Dynamic gain updated to %1 dB").arg(currentGain));
+            } catch (const std::exception &e) {
+                emit logMessage(QString("[SDR] WARNING: Failed to update dynamic gain: %1").arg(e.what()));
+            }
+        }
+
         int flags = 0;
         long long timeNs = 0;
         int ret = sdr->readStream(rxStream, buffs, bufferSize, flags, timeNs, 100000); // 100ms timeout

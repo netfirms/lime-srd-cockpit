@@ -130,6 +130,12 @@ void MainWindow::setupUi()
     m_chkBiasTee->setChecked(false); // default off to prevent damage to passive setups
     ctrlLayout->addWidget(m_chkBiasTee);
 
+    // Adaptive Gain control
+    m_chkAdaptiveGain = new QCheckBox("Adaptive Gain Tuning", this);
+    m_chkAdaptiveGain->setChecked(true); // default ON
+    m_chkAdaptiveGain->setToolTip("Automatically adjust RF gain to maintain optimal ADC power level (-20 to -15 dBFS)");
+    ctrlLayout->addWidget(m_chkAdaptiveGain);
+
     ctrlLayout->addStretch();
 
     // 2. Status Ribbon
@@ -609,8 +615,9 @@ void MainWindow::onStopClicked()
 void MainWindow::onGainSliderChanged(int value)
 {
     m_lblGainVal->setText(QString("%1 dB").arg(value));
-    // If the streamer is already running, SoapySDR gain can't be changed on the fly in this thread,
-    // but the slider updates the value for next startup.
+    if (m_sdrStreamer->isRunningStream()) {
+        m_sdrStreamer->setDynamicGain(value);
+    }
 }
 
 void MainWindow::onPowerMeasured(double powerDb)
@@ -622,6 +629,38 @@ void MainWindow::onPowerMeasured(double powerDb)
         m_lblPower->setStyleSheet("color: #ef4444; font-weight: bold;"); // Red (saturation)
     } else {
         m_lblPower->setStyleSheet("color: #3b82f6; font-weight: bold;"); // Blue
+    }
+
+    // Adaptive Gain Tuning
+    if (m_chkAdaptiveGain->isChecked() && m_sdrStreamer->isRunningStream()) {
+        int currentGain = m_sliderGain->value();
+        int targetGain = currentGain;
+
+        if (powerDb > -15.0) {
+            // Signal is too strong (danger of clipping/saturation)
+            if (powerDb > -5.0) {
+                targetGain -= 5; // Fast back-off
+            } else {
+                targetGain -= 1; // Gentle back-off
+            }
+        } else if (powerDb < -22.0) {
+            // Signal is too weak (quantization noise dominating)
+            targetGain += 1; // Gentle increase
+        }
+
+        // Clamp to LimeSDR RX gain limits
+        targetGain = qBound(0, targetGain, 73);
+
+        if (targetGain != currentGain) {
+            m_sliderGain->blockSignals(true);
+            m_sliderGain->setValue(targetGain);
+            m_lblGainVal->setText(QString("%1 dB").arg(targetGain));
+            m_sliderGain->blockSignals(false);
+            
+            // Apply dynamically to running thread
+            m_sdrStreamer->setDynamicGain(targetGain);
+            appendLog(QString("[AGC] Adaptive Gain adjusted to %1 dB (Power: %2 dBFS)").arg(targetGain).arg(powerDb, 0, 'f', 1), "#a78bfa");
+        }
     }
 }
 
