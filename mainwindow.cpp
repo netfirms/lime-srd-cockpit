@@ -256,6 +256,7 @@ void MainWindow::setupUi()
     QVBoxLayout *consoleLayout = new QVBoxLayout(tabConsole);
     m_txtConsole = new QTextEdit(this);
     m_txtConsole->setReadOnly(true);
+    m_txtConsole->document()->setMaximumBlockCount(1000); // Prevent memory leaks and GUI lag
     m_txtConsole->setObjectName("txtConsole");
     consoleLayout->addWidget(m_txtConsole);
 }
@@ -863,8 +864,8 @@ void MainWindow::readNmeaFile()
         m_lblHdop->setText(pos.hdop > 99.0 ? "---" : QString::number(pos.hdop, 'f', 2));
 
         if (pos.utcDateTime.isValid()) {
-            m_lblUtcTime->setText(pos.utcDateTime.toString("yyyy-MM-dd hh:mm:ss t"));
-            m_lblLocalTime->setText(pos.utcDateTime.toLocalTime().toString("yyyy-MM-dd hh:mm:ss t"));
+            m_lblUtcTime->setText(pos.utcDateTime.toString("yyyy-MM-dd HH:mm:ss") + " UTC");
+            m_lblLocalTime->setText(pos.utcDateTime.toLocalTime().toString("yyyy-MM-dd HH:mm:ss"));
         }
     }
 }

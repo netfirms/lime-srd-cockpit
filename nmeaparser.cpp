@@ -97,7 +97,25 @@ bool NmeaParser::parseLine(const QString &line)
             if (m_position.hasFix) {
                 m_position.latitude = parseDmToDd(parts[2], parts[3]);
                 m_position.longitude = parseDmToDd(parts[4], parts[5]);
-                m_position.altitude = parts[9].toDouble();
+                
+                double rawAlt = parts[9].toDouble();
+                double geoSep = 0.0;
+                if (parts.size() >= 12 && !parts[11].isEmpty()) {
+                    geoSep = parts[11].toDouble();
+                }
+                
+                if (std::abs(geoSep) < 0.001) {
+                    double lat = m_position.latitude;
+                    double lon = m_position.longitude;
+                    if (lat >= 5.0 && lat <= 21.0 && lon >= 97.0 && lon <= 106.0) {
+                        double estGeoid = -43.8 - (lat - 7.88) * 0.31 + (lon - 98.40) * 0.15;
+                        m_position.altitude = rawAlt - estGeoid;
+                    } else {
+                        m_position.altitude = rawAlt;
+                    }
+                } else {
+                    m_position.altitude = rawAlt;
+                }
             }
             
             if (!m_position.rawTime.isEmpty()) {
