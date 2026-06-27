@@ -41,6 +41,7 @@ public slots:
     void onGnssProcessReadyRead();
     void onGnssProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onPeriodicUpdate();
+    void onDiagnosticsClicked();
 
 private:
     void setupUi();
@@ -78,6 +79,7 @@ private:
     // UI Widgets
     QPushButton *m_btnStart;
     QPushButton *m_btnStop;
+    QPushButton *m_btnDiagnostics;
     QComboBox *m_comboSampleRate;
     QSlider *m_sliderGain;
     QLabel *m_lblGainVal;

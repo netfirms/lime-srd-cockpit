@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+#include <SoapySDR/Device.hpp>
+#include <SoapySDR/Types.hpp>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -105,6 +107,11 @@ void MainWindow::setupUi()
     m_btnStop->setEnabled(false);
     connect(m_btnStop, &QPushButton::clicked, this, &MainWindow::onStopClicked);
     ctrlLayout->addWidget(m_btnStop);
+
+    m_btnDiagnostics = new QPushButton("Run Diagnostics", this);
+    m_btnDiagnostics->setFixedHeight(36);
+    connect(m_btnDiagnostics, &QPushButton::clicked, this, &MainWindow::onDiagnosticsClicked);
+    ctrlLayout->addWidget(m_btnDiagnostics);
 
     // Gain control
     ctrlLayout->addWidget(new QLabel("Gain:", this));
@@ -1048,4 +1055,89 @@ void MainWindow::appendLog(const QString &msg, const QString &color)
     formattedMsg.replace("\n", "<br>");
     
     m_txtConsole->append(formattedMsg);
+}
+
+void MainWindow::onDiagnosticsClicked()
+{
+    appendLog("\n=== STARTING HARDWARE & SYSTEM DIAGNOSTICS ===", "#38bdf8"); // Light blue
+
+    // 1. Check GNSS-SDR installation
+    QString gnssSdrPath = "/opt/local/bin/gnss-sdr";
+    QFileInfo sdrInfo(gnssSdrPath);
+    if (sdrInfo.exists() && sdrInfo.isExecutable()) {
+        appendLog("✔ GNSS-SDR Binary: FOUND and EXECUTABLE at " + gnssSdrPath, "#10b981");
+    } else {
+        appendLog("✘ GNSS-SDR Binary: MISSING or NOT EXECUTABLE at " + gnssSdrPath, "#ef4444");
+    }
+
+    // 2. Check A-GPS Assistance Files
+    QStringList agpsFiles = {"gps_ephemeris.xml", "gps_utc_model.xml", "gps_iono.xml"};
+    bool allAgpsExist = true;
+    for (const QString &file : agpsFiles) {
+        QFileInfo fInfo(m_workspaceDir + "/" + file);
+        if (fInfo.exists() && fInfo.size() > 0) {
+            appendLog(QString("✔ A-GPS File: %1 found (%2 bytes)").arg(file).arg(fInfo.size()), "#10b981");
+        } else {
+            appendLog(QString("✘ A-GPS File: %1 is MISSING or EMPTY").arg(file), "#f59e0b");
+            allAgpsExist = false;
+        }
+    }
+    if (allAgpsExist) {
+        appendLog("✔ A-GPS Status: Ready for instant PVT fix.", "#10b981");
+    } else {
+        appendLog("⚠ A-GPS Status: Missing files. Receiver will fallback to slow over-the-air decoding.", "#f59e0b");
+    }
+
+    // 3. Test FIFO creation
+    setupFifo();
+    QFileInfo fifoInfo(m_fifoPath);
+    if (fifoInfo.exists() && fifoInfo.isWritable()) {
+        appendLog("✔ FIFO Pipe: Configured correctly at " + m_fifoPath, "#10b981");
+    } else {
+        appendLog("✘ FIFO Pipe: FAILED to write or create at " + m_fifoPath, "#ef4444");
+    }
+
+    // 4. Test LimeSDR connection via SoapySDR
+    appendLog("Scanning USB Bus for LimeSDR hardware...", "#38bdf8");
+    
+    // Set soapy plugin path for Mac OS to make sure it loads LimeSuite
+    setenv("SOAPY_SDR_PLUGIN_PATH", "/usr/local/lib/SoapySDR/modules0.8", 0);
+
+    try {
+        SoapySDR::KwargsList results = SoapySDR::Device::enumerate();
+        bool foundLime = false;
+        for (const auto &deviceArgs : results) {
+            QString driver = QString::fromStdString(deviceArgs.at("driver"));
+            QString hardware = deviceArgs.count("hardware") ? QString::fromStdString(deviceArgs.at("hardware")) : "Unknown";
+            
+            if (driver.contains("lime", Qt::CaseInsensitive) || hardware.contains("lime", Qt::CaseInsensitive)) {
+                foundLime = true;
+                appendLog(QString("✔ LimeSDR Hardware Detected!"), "#10b981");
+                appendLog(QString("  - Driver: %1").arg(driver), "#94a3b8");
+                appendLog(QString("  - Model: %1").arg(hardware), "#94a3b8");
+                
+                if (deviceArgs.count("serial")) {
+                    appendLog(QString("  - Serial Number: %1").arg(QString::fromStdString(deviceArgs.at("serial"))), "#94a3b8");
+                }
+                
+                // Check USB Speed
+                QString label = deviceArgs.count("label") ? QString::fromStdString(deviceArgs.at("label")) : "";
+                if (label.contains("USB 3.0", Qt::CaseInsensitive)) {
+                    appendLog("✔ USB Interface Speed: USB 3.0 (SUPER SPEED - OK)", "#10b981");
+                } else if (label.contains("USB 2.0", Qt::CaseInsensitive)) {
+                    appendLog("⚠ USB Interface Speed: USB 2.0 (DEGRADED - High risk of overflows/dropouts)", "#f59e0b");
+                } else {
+                    appendLog("⚠ USB Interface Speed: Unknown (Check connection to a blue USB 3.0 port)", "#f59e0b");
+                }
+            }
+        }
+        
+        if (!foundLime) {
+            appendLog("✘ LimeSDR Hardware: NOT DETECTED. Make sure it is plugged into a USB 3.0 port.", "#ef4444");
+        }
+    } catch (const std::exception &e) {
+        appendLog(QString("✘ SoapySDR Diagnostics Error: %1").arg(e.what()), "#ef4444");
+    }
+
+    appendLog("=== DIAGNOSTICS COMPLETED ===\n", "#38bdf8");
 }
